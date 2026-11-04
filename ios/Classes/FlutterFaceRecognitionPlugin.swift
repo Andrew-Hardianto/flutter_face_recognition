@@ -16,15 +16,13 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
     private let embeddingSize = 192
 
     // ============================
-    // Configuration — Anti-Spoofing (MiniFASNetV2 2.7_80x80)
+    // Configuration — Anti-Spoofing (MiniFASNet) — identical to capacitor-face-recognition
     // ============================
     private let antiSpoofModelName = "anti_spoof"
     private let antiSpoofInputSize = 80
     private let antiSpoofOutputSize = 3
     private let defaultLivenessThreshold: Float = 0.75
-    private let antiSpoofScales: [CGFloat] = [2.7]
-
-    private let maxImageDimension: CGFloat = 1920.0
+    private let antiSpoofScales: [CGFloat] = [1.0, 2.7]
 
     private let inferenceQueue = DispatchQueue(
         label: "com.andrew.face.inferenceQueue",
@@ -184,8 +182,7 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
                     outputData.copyBytes(to: ptr)
                 }
 
-                let normalized = self.l2Normalize(embeddings)
-                self.replySuccess(result, data: ["embedding": normalized])
+                self.replySuccess(result, data: ["embedding": embeddings.map { Double($0) }])
             } catch {
                 self.replyError(
                     result,
@@ -431,54 +428,25 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
         imgWidth: CGFloat,
         imgHeight: CGFloat
     ) -> Float? {
-        let boxW = baseFaceRect.width
-        let boxH = baseFaceRect.height
-        guard boxW > 0, boxH > 0, imgWidth > 1, imgHeight > 1 else { return nil }
+        // 1. Buat bounding box menjadi BUJUR SANGKAR (square) terlebih dahulu
+        // Persis seperti di capacitor-face-recognition
+        let cx = baseFaceRect.origin.x + baseFaceRect.width / 2.0
+        let cy = baseFaceRect.origin.y + baseFaceRect.height / 2.0
+        let side = max(baseFaceRect.width, baseFaceRect.height)
 
-        // Official Minivision Silent-Face-Anti-Spoofing _get_new_box algorithm:
-        // Dynamically cap scale so the expanded box never exceeds image dimensions,
-        // and shift (instead of clipping) when touching image borders to preserve aspect ratio.
-        let actualScale = min(
-            scaleFactor,
-            min((imgWidth - 1.0) / boxW, (imgHeight - 1.0) / boxH)
-        )
+        // 2. Perbesar bujur sangkar berdasarkan scaleFactor (1.0x dan 2.7x)
+        let newSide = side * scaleFactor
+        let expandW = newSide / 2.0
+        let expandH = newSide / 2.0
 
-        let newWidth = boxW * actualScale
-        let newHeight = boxH * actualScale
-        let centerX = baseFaceRect.origin.x + boxW / 2.0
-        let centerY = baseFaceRect.origin.y + boxH / 2.0
+        // 3. Hitung koordinat crop dan pastikan tidak keluar dari batas gambar
+        let expandedX = max(0, cx - expandW)
+        let expandedY = max(0, cy - expandH)
+        let expandedW = min(imgWidth - expandedX, cx + expandW - expandedX)
+        let expandedH = min(imgHeight - expandedY, cy + expandH - expandedY)
 
-        var leftTopX = centerX - newWidth / 2.0
-        var leftTopY = centerY - newHeight / 2.0
-        var rightBottomX = centerX + newWidth / 2.0
-        var rightBottomY = centerY + newHeight / 2.0
-
-        if leftTopX < 0 {
-            rightBottomX -= leftTopX
-            leftTopX = 0
-        }
-        if leftTopY < 0 {
-            rightBottomY -= leftTopY
-            leftTopY = 0
-        }
-        if rightBottomX > imgWidth - 1.0 {
-            leftTopX -= (rightBottomX - (imgWidth - 1.0))
-            rightBottomX = imgWidth - 1.0
-        }
-        if rightBottomY > imgHeight - 1.0 {
-            leftTopY -= (rightBottomY - (imgHeight - 1.0))
-            rightBottomY = imgHeight - 1.0
-        }
-
-        let left = max(0, floor(leftTopX))
-        let top = max(0, floor(leftTopY))
-        let right = min(imgWidth, floor(rightBottomX) + 1.0)
-        let bottom = min(imgHeight, floor(rightBottomY) + 1.0)
-        let width = right - left
-        let height = bottom - top
-
-        guard width > 0, height > 0 else { return nil }
-        let faceRect = CGRect(x: left, y: top, width: width, height: height)
+        guard expandedW > 0, expandedH > 0 else { return nil }
+        let faceRect = CGRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH)
 
         guard let croppedCgImage = cgImage.cropping(to: faceRect) else { return nil }
 
@@ -668,28 +636,22 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
               let rawImage = UIImage(data: data)
         else { return nil }
 
-        return normalizeAndDownsampleImage(rawImage)
+        return normalizeImageOrientationIfNeeded(rawImage)
     }
 
-    private func normalizeAndDownsampleImage(_ image: UIImage) -> UIImage {
-        let width = image.size.width
-        let height = image.size.height
-        let maxDim = max(width, height)
-
-        let scaleRatio: CGFloat = maxDim > maxImageDimension ? (maxImageDimension / maxDim) : 1.0
-        if image.imageOrientation == .up && scaleRatio == 1.0 {
+    private func normalizeImageOrientationIfNeeded(_ image: UIImage) -> UIImage {
+        // Jika orientasi sudah .up (seperti frame canvas/stream di Capacitor),
+        // kembalikan langsung tanpa re-render agar piksel 100% identik
+        if image.imageOrientation == .up {
             return image
         }
 
-        let targetSize = CGSize(
-            width: floor(width * scaleRatio),
-            height: floor(height * scaleRatio)
-        )
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
-        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        format.preferredRange = .standard // Pastikan sRGB standar, bukan Display P3
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
         return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
+            image.draw(in: CGRect(origin: .zero, size: image.size))
         }
     }
 

@@ -51,15 +51,12 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
         private const val EMBEDDING_SIZE = 192
         private const val BYTES_PER_FLOAT = 4
 
-        // Anti-Spoofing (MiniFASNetV2 2.7_80x80) configuration
+        // Anti-Spoofing (MiniFASNet) configuration — identical to capacitor-face-recognition
         private const val ANTI_SPOOF_MODEL_FILE = "anti_spoof.tflite"
         private const val ANTI_SPOOF_INPUT_SIZE = 80
         private const val ANTI_SPOOF_OUTPUT_SIZE = 3
         private const val DEFAULT_LIVENESS_THRESHOLD = 0.75f
-        private val ANTI_SPOOF_SCALES = floatArrayOf(2.7f)
-
-        // Max image dimension to avoid OutOfMemoryError on ultra-high-res photos
-        private const val MAX_IMAGE_DIMENSION = 1920
+        private val ANTI_SPOOF_SCALES = floatArrayOf(1.0f, 2.7f)
     }
 
     private lateinit var channel: MethodChannel
@@ -188,8 +185,8 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
             interpreter.run(inputBuffer, outputArray)
         }
 
-        val normalizedEmbedding = l2Normalize(outputArray[0])
-        return mapOf("embedding" to normalizedEmbedding)
+        val embedding = outputArray[0].map { it.toDouble() }
+        return mapOf("embedding" to embedding)
     }
 
     private suspend fun handleCheckLiveness(call: MethodCall): Map<String, Any> {
@@ -287,52 +284,22 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
         scaleFactor: Float
     ): Float {
         return try {
-            val boxW = bounds.width().toFloat()
-            val boxH = bounds.height().toFloat()
-            if (boxW <= 0f || boxH <= 0f) return -1f
+            // 1. Buat bounding box menjadi BUJUR SANGKAR (square) terlebih dahulu
+            // Persis seperti di capacitor-face-recognition
+            val cx = bounds.left + bounds.width() / 2
+            val cy = bounds.top + bounds.height() / 2
+            val side = max(bounds.width(), bounds.height())
 
-            val srcW = bitmap.width
-            val srcH = bitmap.height
+            // 2. Perbesar bujur sangkar berdasarkan scaleFactor (1.0x dan 2.7x)
+            val newSide = (side * scaleFactor).toInt()
+            val expandW = newSide / 2
+            val expandH = newSide / 2
 
-            // Official Minivision Silent-Face-Anti-Spoofing _get_new_box algorithm:
-            // Dynamically cap scale so the expanded box never exceeds image dimensions,
-            // and shift (instead of clipping) when touching image borders to preserve aspect ratio.
-            val actualScale = min(
-                scaleFactor,
-                min((srcW - 1) / boxW, (srcH - 1) / boxH)
-            )
-
-            val newWidth = boxW * actualScale
-            val newHeight = boxH * actualScale
-            val centerX = bounds.left + boxW / 2.0f
-            val centerY = bounds.top + boxH / 2.0f
-
-            var leftTopX = centerX - newWidth / 2.0f
-            var leftTopY = centerY - newHeight / 2.0f
-            var rightBottomX = centerX + newWidth / 2.0f
-            var rightBottomY = centerY + newHeight / 2.0f
-
-            if (leftTopX < 0f) {
-                rightBottomX -= leftTopX
-                leftTopX = 0f
-            }
-            if (leftTopY < 0f) {
-                rightBottomY -= leftTopY
-                leftTopY = 0f
-            }
-            if (rightBottomX > srcW - 1) {
-                leftTopX -= (rightBottomX - (srcW - 1))
-                rightBottomX = (srcW - 1).toFloat()
-            }
-            if (rightBottomY > srcH - 1) {
-                leftTopY -= (rightBottomY - (srcH - 1))
-                rightBottomY = (srcH - 1).toFloat()
-            }
-
-            val left = max(0, leftTopX.toInt())
-            val top = max(0, leftTopY.toInt())
-            val right = min(srcW, rightBottomX.toInt() + 1)
-            val bottom = min(srcH, rightBottomY.toInt() + 1)
+            // 3. Hitung koordinat crop dan pastikan tidak keluar dari batas gambar
+            val left = max(0, cx - expandW)
+            val top = max(0, cy - expandH)
+            val right = min(bitmap.width, cx + expandW)
+            val bottom = min(bitmap.height, cy + expandH)
             val width = right - left
             val height = bottom - top
 
@@ -464,22 +431,7 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
             throw FaceRecognitionException("INVALID_IMAGE_INPUT", "Data gambar kosong")
         }
 
-        // First decode bounds to calculate inSampleSize if image is very large
-        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, boundsOptions)
-
-        var sampleSize = 1
-        val maxDim = max(boundsOptions.outWidth, boundsOptions.outHeight)
-        while (maxDim / sampleSize > MAX_IMAGE_DIMENSION) {
-            sampleSize *= 2
-        }
-
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-
-        val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOptions)
+        val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
             ?: throw FaceRecognitionException("IMAGE_DECODE_FAILED", "Gagal men-decode data gambar menjadi Bitmap")
 
         return applyExifOrientation(decoded, rawBytes)
@@ -500,11 +452,22 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
             )
             val matrix = Matrix()
             when (orientation) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
-                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+                    matrix.setRotate(180f)
+                    matrix.postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    matrix.setRotate(90f)
+                    matrix.postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    matrix.setRotate(-90f)
+                    matrix.postScale(-1f, 1f)
+                }
                 else -> return bitmap
             }
             Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)

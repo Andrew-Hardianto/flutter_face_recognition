@@ -61,9 +61,6 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
     try {
       final file = await _picker.pickImage(
         source: source,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 90,
         preferredCameraDevice: CameraDevice.front,
       );
       if (file == null) return null;
