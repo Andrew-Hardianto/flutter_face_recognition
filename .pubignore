@@ -1,0 +1,12 @@
+.idea/
+.vscode/
+*.iml
+.DS_Store
+build/
+android/.gradle/
+ios/.symlinks/
+ios/Pods/
+example/build/
+example/ios/Pods/
+example/android/.gradle/
+

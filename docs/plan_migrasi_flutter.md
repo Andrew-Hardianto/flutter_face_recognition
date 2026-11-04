@@ -118,40 +118,40 @@ flowchart LR
 ```
 
 ### Milestone 1: Inisialisasi Scaffold & Konfigurasi Asset Model
-- [ ] Inisialisasi struktur plugin Flutter (`flutter create --template=plugin --platforms=android,ios .`).
-- [ ] Daftarkan model `mobile_face_net.tflite` dan `anti_spoof.tflite` di `assets/models/` pada `pubspec.yaml` (single-source bundling).
-- [ ] Konfigurasi `android/build.gradle.kts` dengan dependensi Google ML Kit, TensorFlow Lite, dan Kotlin Coroutines.
-- [ ] Konfigurasi `ios/flutter_face_recognition.podspec` dengan `TensorFlowLiteSwift`.
+- [x] Inisialisasi struktur plugin Flutter (`flutter create --template=plugin --platforms=android,ios .`).
+- [x] Daftarkan model `mobile_face_net.tflite` dan `anti_spoof.tflite` di `assets/models/` pada `pubspec.yaml` (single-source bundling).
+- [x] Konfigurasi `android/build.gradle.kts` dengan dependensi Google ML Kit, TensorFlow Lite, dan Kotlin Coroutines.
+- [x] Konfigurasi `ios/flutter_face_recognition.podspec` dengan `TensorFlowLiteSwift`.
 
 ### Milestone 2: Implementasi Android Native (`Kotlin`)
-- [ ] Load model TFLite dari Flutter assets menggunakan `FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(...)` dan `AssetFileDescriptor` (`MappedByteBuffer`).
-- [ ] Jalankan pemrosesan berat di background thread menggunakan `CoroutineScope(Dispatchers.Default)` dan kembalikan hasil ke `Dispatchers.Main`.
-- [ ] Implementasi handler `extractFaceFeature` (Bitmap decode + EXIF rotation $\to$ ML Kit $\to$ Crop $\to$ Resize 112 $\to$ TFLite 192 embedding $\to$ L2-Normalization).
-- [ ] Implementasi handler `checkLiveness` (Multi-scale 1.0x & 2.7x $\to$ BGR buffer 80 $\to$ Softmax index 1).
-- [ ] Implementasi handler `detectFaces` (Bounding box, rotasi kepala, eye open probability).
-- [ ] Implementasi handler `dispose` & cleanup pada `onDetachedFromEngine`.
+- [x] Load model TFLite dari Flutter assets menggunakan `FlutterAssets.getAssetFilePathBySubpath(...)` dan `AssetFileDescriptor` (`MappedByteBuffer`).
+- [x] Jalankan pemrosesan berat di background thread menggunakan `CoroutineScope(Dispatchers.Default)` dan kembalikan hasil ke `Dispatchers.Main`.
+- [x] Implementasi handler `extractFaceFeature` (Bitmap decode + EXIF rotation $\to$ ML Kit $\to$ Crop $\to$ Resize 112 $\to$ TFLite 192 embedding $\to$ L2-Normalization).
+- [x] Implementasi handler `checkLiveness` (Multi-scale 1.0x & 2.7x $\to$ BGR buffer 80 $\to$ Softmax index 1).
+- [x] Implementasi handler `detectFaces` (Bounding box, rotasi kepala, eye open probability).
+- [x] Implementasi handler `dispose` & cleanup pada `onDetachedFromEngine`.
 
 ### Milestone 3: Implementasi iOS Native (`Swift`)
-- [ ] Load model TFLite dari Flutter assets menggunakan `registrar.lookupKey(forAsset: ...)` dan `Bundle.main.path(forResource:ofType:)`.
-- [ ] Jalankan inferensi dan Vision request di background queue (`DispatchQueue.global(qos: .userInitiated)`).
-- [ ] Implementasi handler `extractFaceFeature` menggunakan Apple Vision (`VNDetectFaceRectanglesRequest`) + TFLite + L2-Normalization.
-- [ ] Implementasi handler `checkLiveness` menggunakan multi-scale crop + MiniFASNet.
-- [ ] Implementasi handler `detectFaces` menggunakan `VNDetectFaceLandmarksRequest` + kalkulasi EAR yang dinormalisasi ke skala probabilitas $[0.0, 1.0]$.
-- [ ] Implementasi handler `dispose` untuk melepas instance TFLite `Interpreter`.
+- [x] Load model TFLite dari Flutter assets menggunakan `registrar.lookupKey(forAsset: ...)` dan `Bundle.main.path(forResource:ofType:)`.
+- [x] Jalankan inferensi dan Vision request di background queue (`DispatchQueue(label: ..., qos: .userInitiated)`).
+- [x] Implementasi handler `extractFaceFeature` menggunakan Apple Vision (`VNDetectFaceRectanglesRequest`) + TFLite + L2-Normalization.
+- [x] Implementasi handler `checkLiveness` menggunakan multi-scale crop + MiniFASNet.
+- [x] Implementasi handler `detectFaces` menggunakan `VNDetectFaceLandmarksRequest` + kalkulasi EAR yang dinormalisasi ke skala probabilitas $[0.0, 1.0]$.
+- [x] Implementasi handler `dispose` untuk melepas instance TFLite `Interpreter`.
 
 ### Milestone 4: Desain API Dart & Model Objek
-- [ ] Membuat class `FaceRecognition`:
+- [x] Membuat class `FaceRecognition`:
   - `extractFaceFeature({Uint8List? bytes, String? base64})`
   - `checkLiveness({Uint8List? bytes, String? base64, double threshold = 0.75})`
   - `detectFaces({Uint8List? bytes, String? base64})`
   - `compareFaces(List<double> v1, List<double> v2, {double threshold = 0.75})` (dengan L2-norm & zero-vector guard)
   - `dispose()`
-- [ ] Model respon typed: `FaceDetectionResult`, `DetectedFace`, `LivenessResult`, `MatchResult`.
+- [x] Model respon typed: `FaceDetectionResult`, `DetectedFace`, `LivenessResult`, `MatchResult`.
 
 ### Milestone 5: Pembuatan Example App (`example/`)
-- [ ] Screen pendaftaran wajah (*Enrollment*): simpan vector embedding ke memori/local storage.
-- [ ] Screen verifikasi wajah (*Verification*): liveness check terlebih dahulu, kemudian pencocokan embedding.
-- [ ] Screen demo deteksi mata & kedip (*Blink Detection*) dengan throttling frame kamera.
+- [x] Screen pendaftaran wajah (*Enrollment*): simpan vector embedding ke memori/local storage.
+- [x] Screen verifikasi wajah (*Verification*): liveness check terlebih dahulu, kemudian pencocokan embedding.
+- [x] Screen demo deteksi mata & kedip (*Blink Detection*) dengan indikator probabilitas mata.
 
 ---
 

@@ -125,9 +125,9 @@ Untuk meningkatkan kredibilitas dan mendapatkan **Lencana Biru (Verified Publish
 
 ## 6. Checklist Eksekusi Bertahap
 
-- [ ] **Langkah 1**: Selesaikan implementasi plugin Flutter (`lib/`, `android/`, `ios/`).
-- [ ] **Langkah 2**: Siapkan `example/` app yang berfungsi penuh.
-- [ ] **Langkah 3**: Buat file `README.md`, `CHANGELOG.md`, dan `LICENSE`.
+- [x] **Langkah 1**: Selesaikan implementasi plugin Flutter (`lib/`, `android/`, `ios/`).
+- [x] **Langkah 2**: Siapkan `example/` app yang berfungsi penuh.
+- [x] **Langkah 3**: Buat file `README.md`, `CHANGELOG.md`, dan `LICENSE`.
 - [ ] **Langkah 4**: Push source code ke GitHub repository publik.
 - [ ] **Langkah 5**: Jalankan `dart format .` dan `flutter analyze`.
 - [ ] **Langkah 6**: Jalankan `dart pub publish --dry-run` sampai 0 warning.
