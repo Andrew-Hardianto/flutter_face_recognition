@@ -1,3 +1,15 @@
+## Unreleased
+
+* **Android:** fixed manifest-merge failure in consumer apps on AGP 8.x+
+  (`Namespace 'org.tensorflow.lite' is used in multiple modules and/or
+  libraries`) by upgrading `org.tensorflow:tensorflow-lite` `2.14.0` →
+  `2.16.1` — the transitive `tensorflow-lite-api` declares its own namespace
+  from that release — and removing the unused `tensorflow-lite-support:0.4.4`
+  (its `-api` split had the same duplicate-namespace problem).
+* **Android:** migrated to Flutter's **built-in Kotlin** (no longer applies
+  `org.jetbrains.kotlin.android` itself, and no longer declares its own AGP /
+  Kotlin classpaths). Requires Flutter `>=3.44.0` / Dart `>=3.12.0`.
+
 ## 1.0.0
 
 * Initial release of `flutter_face_recognition`.

@@ -1,29 +1,16 @@
 group = "com.andrew.face"
 version = "1.0.0"
 
-buildscript {
-    val kotlinVersion = "2.1.0"
-    repositories {
-        google()
-        mavenCentral()
-    }
-
-    dependencies {
-        classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
-    }
-}
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-
+// Catatan: tidak ada blok `buildscript`/`allprojects` di sini. AGP & Kotlin
+// Gradle Plugin disediakan oleh build aplikasi konsumen (Flutter), sehingga
+// plugin ini tidak "menerapkan KGP" sendiri dan tidak memicu peringatan
+// "Built-in Kotlin" pada Flutter versi mendatang.
+//
+// Built-in Kotlin (Flutter >= 3.44): plugin cukup memakai
+// `com.android.library`; blok `kotlin { compilerOptions {} }` di bawah sudah
+// disediakan KGP bawaan Flutter.
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -65,8 +52,13 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:face-detection:16.1.7")
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // 2.16.1: `tensorflow-lite-api` transitive sudah memakai namespace unik
+    // (`org.tensorflow.lite.api`). Pada 2.14.0 keduanya memakai
+    // `org.tensorflow.lite` sehingga manifest merger AGP 8.x gagal di app
+    // konsumen. `tensorflow-lite-support` sengaja tidak dipakai — kode plugin
+    // hanya butuh `org.tensorflow.lite.Interpreter` (dan support-nya ikut
+    // membawa konflik namespace serupa).
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
