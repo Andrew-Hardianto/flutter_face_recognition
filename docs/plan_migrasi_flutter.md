@@ -84,16 +84,18 @@ flutter_face_recognition/
   2. **L2-Normalization**: Vektor embedding dinormalisasi terlebih dahulu ($\hat{\mathbf{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|_2}$) agar skala embedding seragam dan perhitungan Cosine Similarity lebih stabil.
 
 ### 3. `checkLiveness` (Anti-Spoofing / Passive Liveness)
-* **Pipeline Multi-Scale MiniFASNet**:
-  1. Deteksi wajah $\to$ ubah bounding box menjadi bujur sangkar (*square*).
-  2. **Multi-Scale Crop**:
-     - **Scale 1.0x**: Crop ketat (area wajah inti).
-     - **Scale 2.7x**: Crop lebar (menangkap artefak layar HP / pinggiran kertas foto cetak).
-  3. Resize masing-masing ke **$80 \times 80$**.
+* **Pipeline MiniFASNetV2 (`2.7_80x80`)**:
+  1. Deteksi wajah (`bounds`).
+  2. **Algoritma Crop Resmi `_get_new_box` (`Scale 2.7x`)**:
+     - Batasi skala secara dinamis agar kotak crop tidak melebihi dimensi gambar:
+       $$\text{scale}_{\text{actual}} = \min\!\left(2.7,\; \frac{\text{srcW} - 1}{\text{boxW}},\; \frac{\text{srcH} - 1}{\text{boxH}}\right)$$
+     - Geser (*shift*) kotak ke dalam gambar jika menyentuh tepi (`left < 0` atau `right > srcW - 1`) tanpa memotong sepihak (*no clipping distortion*).
+     - *(Catatan: `scale = 1.0x` dihapus karena model `anti_spoof.tflite` adalah `2.7_80x80_MiniFASNetV2` yang hanya dilatih untuk skala `2.7x`)*.
+  3. Resize ke **$80 \times 80$**.
   4. Format pixel: **BGR raw [0, 255]** (sesuai pre-baked normalisasi MiniFASNet).
   5. Inference `anti_spoof.tflite` $\to$ output 3 logits `[print_spoof, real_face, replay_spoof]`.
   6. Hitung **Softmax** pada output logits $\to$ ambil probabilitas Index 1 (`real_face`).
-  7. Rata-ratakan skor dari kedua scale $\to$ bandingkan dengan threshold ($0.75$).
+  7. Bandingkan skor dengan threshold ($0.75$).
 
 ### 4. `compareFaces` (Verifikasi Wajah)
 * Dijalankan di layer **Dart** murni tanpa overhead pemanggilan bridge:

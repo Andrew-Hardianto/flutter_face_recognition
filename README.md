@@ -11,7 +11,7 @@ High-performance, **100% offline** Face Detection, **192-D Face Embedding Recogn
 
 - **Zero-Copy `Uint8List` Input**: Send raw encoded image bytes (`JPEG` / `PNG`) directly over `MethodChannel` without Base64 memory overhead (Base64 string input is also supported for backward compatibility).
 - **192-Dimensional Face Embeddings (`extractFaceFeature`)**: Uses `mobile_face_net.tflite` ($112 \times 112$, RGB normalized to $[-1.0, 1.0]$) with built-in **L2-normalization**.
-- **Multi-Scale Passive Anti-Spoofing (`checkLiveness`)**: Uses `anti_spoof.tflite` (`MiniFASNet`) with dual-scale cropping (**`1.0x` tight face crop** + **`2.7x` context crop**) to detect printed photos, digital screens, and video replay attacks.
+- **Passive Anti-Spoofing (`checkLiveness`)**: Uses `anti_spoof.tflite` (`2.7_80x80_MiniFASNetV2`) with the official Minivision `_get_new_box` **`2.7x` context crop** (dynamic scale capping + boundary shifting without aspect ratio distortion) to detect printed photos, digital screens, and video replay attacks.
 - **Cross-Platform Face & Eye-Blink Detection (`detectFaces`)**:
   - **Android**: Google ML Kit `FaceDetection` (`CLASSIFICATION_MODE_ALL` & `LANDMARK_MODE_ALL`).
   - **iOS**: Apple Vision `VNDetectFaceLandmarksRequest` with normalized Eye Aspect Ratio (EAR) mapped to `[0.0, 1.0]`.

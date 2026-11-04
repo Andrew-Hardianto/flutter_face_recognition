@@ -51,12 +51,12 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
         private const val EMBEDDING_SIZE = 192
         private const val BYTES_PER_FLOAT = 4
 
-        // Anti-Spoofing (MiniFASNet) configuration
+        // Anti-Spoofing (MiniFASNetV2 2.7_80x80) configuration
         private const val ANTI_SPOOF_MODEL_FILE = "anti_spoof.tflite"
         private const val ANTI_SPOOF_INPUT_SIZE = 80
         private const val ANTI_SPOOF_OUTPUT_SIZE = 3
         private const val DEFAULT_LIVENESS_THRESHOLD = 0.75f
-        private val ANTI_SPOOF_SCALES = floatArrayOf(1.0f, 2.7f)
+        private val ANTI_SPOOF_SCALES = floatArrayOf(2.7f)
 
         // Max image dimension to avoid OutOfMemoryError on ultra-high-res photos
         private const val MAX_IMAGE_DIMENSION = 1920
@@ -287,18 +287,52 @@ class FlutterFaceRecognitionPlugin : FlutterPlugin, MethodCallHandler {
         scaleFactor: Float
     ): Float {
         return try {
-            val cx = bounds.left + bounds.width() / 2
-            val cy = bounds.top + bounds.height() / 2
-            val side = max(bounds.width(), bounds.height())
+            val boxW = bounds.width().toFloat()
+            val boxH = bounds.height().toFloat()
+            if (boxW <= 0f || boxH <= 0f) return -1f
 
-            val newSide = (side * scaleFactor).toInt()
-            val expandW = newSide / 2
-            val expandH = newSide / 2
+            val srcW = bitmap.width
+            val srcH = bitmap.height
 
-            val left = max(0, cx - expandW)
-            val top = max(0, cy - expandH)
-            val right = min(bitmap.width, cx + expandW)
-            val bottom = min(bitmap.height, cy + expandH)
+            // Official Minivision Silent-Face-Anti-Spoofing _get_new_box algorithm:
+            // Dynamically cap scale so the expanded box never exceeds image dimensions,
+            // and shift (instead of clipping) when touching image borders to preserve aspect ratio.
+            val actualScale = min(
+                scaleFactor,
+                min((srcW - 1) / boxW, (srcH - 1) / boxH)
+            )
+
+            val newWidth = boxW * actualScale
+            val newHeight = boxH * actualScale
+            val centerX = bounds.left + boxW / 2.0f
+            val centerY = bounds.top + boxH / 2.0f
+
+            var leftTopX = centerX - newWidth / 2.0f
+            var leftTopY = centerY - newHeight / 2.0f
+            var rightBottomX = centerX + newWidth / 2.0f
+            var rightBottomY = centerY + newHeight / 2.0f
+
+            if (leftTopX < 0f) {
+                rightBottomX -= leftTopX
+                leftTopX = 0f
+            }
+            if (leftTopY < 0f) {
+                rightBottomY -= leftTopY
+                leftTopY = 0f
+            }
+            if (rightBottomX > srcW - 1) {
+                leftTopX -= (rightBottomX - (srcW - 1))
+                rightBottomX = (srcW - 1).toFloat()
+            }
+            if (rightBottomY > srcH - 1) {
+                leftTopY -= (rightBottomY - (srcH - 1))
+                rightBottomY = (srcH - 1).toFloat()
+            }
+
+            val left = max(0, leftTopX.toInt())
+            val top = max(0, leftTopY.toInt())
+            val right = min(srcW, rightBottomX.toInt() + 1)
+            val bottom = min(srcH, rightBottomY.toInt() + 1)
             val width = right - left
             val height = bottom - top
 

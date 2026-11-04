@@ -16,13 +16,13 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
     private let embeddingSize = 192
 
     // ============================
-    // Configuration — Anti-Spoofing (MiniFASNet)
+    // Configuration — Anti-Spoofing (MiniFASNetV2 2.7_80x80)
     // ============================
     private let antiSpoofModelName = "anti_spoof"
     private let antiSpoofInputSize = 80
     private let antiSpoofOutputSize = 3
     private let defaultLivenessThreshold: Float = 0.75
-    private let antiSpoofScales: [CGFloat] = [1.0, 2.7]
+    private let antiSpoofScales: [CGFloat] = [2.7]
 
     private let maxImageDimension: CGFloat = 1920.0
 
@@ -431,21 +431,54 @@ public class FlutterFaceRecognitionPlugin: NSObject, FlutterPlugin {
         imgWidth: CGFloat,
         imgHeight: CGFloat
     ) -> Float? {
-        let cx = baseFaceRect.origin.x + baseFaceRect.width / 2.0
-        let cy = baseFaceRect.origin.y + baseFaceRect.height / 2.0
-        let side = max(baseFaceRect.width, baseFaceRect.height)
+        let boxW = baseFaceRect.width
+        let boxH = baseFaceRect.height
+        guard boxW > 0, boxH > 0, imgWidth > 1, imgHeight > 1 else { return nil }
 
-        let newSide = side * scaleFactor
-        let expandW = newSide / 2.0
-        let expandH = newSide / 2.0
+        // Official Minivision Silent-Face-Anti-Spoofing _get_new_box algorithm:
+        // Dynamically cap scale so the expanded box never exceeds image dimensions,
+        // and shift (instead of clipping) when touching image borders to preserve aspect ratio.
+        let actualScale = min(
+            scaleFactor,
+            min((imgWidth - 1.0) / boxW, (imgHeight - 1.0) / boxH)
+        )
 
-        let expandedX = max(0, cx - expandW)
-        let expandedY = max(0, cy - expandH)
-        let expandedW = min(imgWidth - expandedX, cx + expandW - expandedX)
-        let expandedH = min(imgHeight - expandedY, cy + expandH - expandedY)
+        let newWidth = boxW * actualScale
+        let newHeight = boxH * actualScale
+        let centerX = baseFaceRect.origin.x + boxW / 2.0
+        let centerY = baseFaceRect.origin.y + boxH / 2.0
 
-        guard expandedW > 0, expandedH > 0 else { return nil }
-        let faceRect = CGRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH)
+        var leftTopX = centerX - newWidth / 2.0
+        var leftTopY = centerY - newHeight / 2.0
+        var rightBottomX = centerX + newWidth / 2.0
+        var rightBottomY = centerY + newHeight / 2.0
+
+        if leftTopX < 0 {
+            rightBottomX -= leftTopX
+            leftTopX = 0
+        }
+        if leftTopY < 0 {
+            rightBottomY -= leftTopY
+            leftTopY = 0
+        }
+        if rightBottomX > imgWidth - 1.0 {
+            leftTopX -= (rightBottomX - (imgWidth - 1.0))
+            rightBottomX = imgWidth - 1.0
+        }
+        if rightBottomY > imgHeight - 1.0 {
+            leftTopY -= (rightBottomY - (imgHeight - 1.0))
+            rightBottomY = imgHeight - 1.0
+        }
+
+        let left = max(0, floor(leftTopX))
+        let top = max(0, floor(leftTopY))
+        let right = min(imgWidth, floor(rightBottomX) + 1.0)
+        let bottom = min(imgHeight, floor(rightBottomY) + 1.0)
+        let width = right - left
+        let height = bottom - top
+
+        guard width > 0, height > 0 else { return nil }
+        let faceRect = CGRect(x: left, y: top, width: width, height: height)
 
         guard let croppedCgImage = cgImage.cropping(to: faceRect) else { return nil }
 
