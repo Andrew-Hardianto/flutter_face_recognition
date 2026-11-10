@@ -15,6 +15,9 @@ and Multi-Scale Passive Liveness Detection (MiniFASNet) for Flutter using TFLite
   s.dependency 'TensorFlowLiteSwift', '~> 2.14.0'
   s.platform         = :ios, '15.0'
 
+  # Native capture UI (AVFoundation) + face detection (Vision)
+  s.frameworks       = 'AVFoundation', 'Vision'
+
   # TensorFlowLiteSwift requires static framework linkage on CocoaPods
   s.static_framework = true
 

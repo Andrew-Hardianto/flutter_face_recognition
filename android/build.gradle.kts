@@ -60,6 +60,16 @@ dependencies {
     // membawa konflik namespace serupa).
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
+    // LivenessCaptureActivity (native capture, captureLivenessSession) —
+    // CameraX + ComponentActivity (LifecycleOwner untuk bindToLifecycle) +
+    // ContextCompat. Versi sama dengan referensi capacitor-face-recognition.
+    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 

@@ -5,6 +5,10 @@ import 'flutter_face_recognition_platform_interface.dart';
 import 'src/models.dart';
 
 /// An implementation of [FlutterFaceRecognitionPlatform] that uses method channels.
+///
+/// This class defines the wire contract that the Android (Kotlin) and iOS
+/// (Swift) plugins implement. Keep the method names and argument/result keys in
+/// sync with both native sides.
 class MethodChannelFlutterFaceRecognition
     extends FlutterFaceRecognitionPlatform {
   /// The method channel used to interact with the native platform.
@@ -28,6 +32,23 @@ class MethodChannelFlutterFaceRecognition
       if (base64 != null && base64.isNotEmpty) 'base64': base64,
       if (extra != null) ...extra,
     };
+  }
+
+  Map<String, dynamic> _optionalRefConfig({
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) {
+    return <String, dynamic>{
+      if (referenceEmbedding != null) 'referenceEmbedding': referenceEmbedding,
+      if (config != null) 'config': config.toMap(),
+    };
+  }
+
+  @override
+  Future<void> initialize({bool enableInsecureFramePath = false}) async {
+    await methodChannel.invokeMethod<void>('initialize', <String, dynamic>{
+      'enableInsecureFramePath': enableInsecureFramePath,
+    });
   }
 
   @override
@@ -56,12 +77,14 @@ class MethodChannelFlutterFaceRecognition
   Future<LivenessResult> checkLiveness({
     Uint8List? bytes,
     String? base64,
-    double threshold = 0.75,
+    double? threshold,
   }) async {
     final args = _buildImageArgs(
       bytes: bytes,
       base64: base64,
-      extra: <String, dynamic>{'threshold': threshold},
+      extra: <String, dynamic>{
+        if (threshold != null) 'threshold': threshold,
+      },
     );
 
     final result = await methodChannel.invokeMapMethod<String, dynamic>(
@@ -101,8 +124,131 @@ class MethodChannelFlutterFaceRecognition
   }
 
   @override
+  Future<VerifyFaceResult> verifyFace({
+    Uint8List? bytes,
+    String? base64,
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) async {
+    final args = _buildImageArgs(
+      bytes: bytes,
+      base64: base64,
+      extra: _optionalRefConfig(
+        referenceEmbedding: referenceEmbedding,
+        config: config,
+      ),
+    );
+
+    final result = await methodChannel.invokeMapMethod<String, dynamic>(
+      'verifyFace',
+      args,
+    );
+
+    if (result == null) {
+      throw PlatformException(
+        code: 'EMPTY_VERIFY_RESULT',
+        message: 'Native platform returned null for verifyFace.',
+      );
+    }
+
+    return VerifyFaceResult.fromMap(result);
+  }
+
+  @override
+  Future<ChallengeSession> createChallengeSession() async {
+    final result = await methodChannel.invokeMapMethod<String, dynamic>(
+      'createChallengeSession',
+    );
+
+    if (result == null) {
+      throw PlatformException(
+        code: 'EMPTY_CHALLENGE_SESSION',
+        message: 'Native platform returned null for createChallengeSession.',
+      );
+    }
+
+    return ChallengeSession.fromMap(result);
+  }
+
+  @override
+  Future<SequenceVerifyResult> verifyFaceSequence({
+    required List<Uint8List> frames,
+    required String challengeId,
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) async {
+    if (frames.isEmpty) {
+      throw ArgumentError('`frames` must contain at least one frame.');
+    }
+
+    final args = <String, dynamic>{
+      'frames': frames,
+      'challengeId': challengeId,
+      ..._optionalRefConfig(
+        referenceEmbedding: referenceEmbedding,
+        config: config,
+      ),
+    };
+
+    final result = await methodChannel.invokeMapMethod<String, dynamic>(
+      'verifyFaceSequence',
+      args,
+    );
+
+    if (result == null) {
+      throw PlatformException(
+        code: 'EMPTY_SEQUENCE_RESULT',
+        message: 'Native platform returned null for verifyFaceSequence.',
+      );
+    }
+
+    return SequenceVerifyResult.fromMap(result);
+  }
+
+  @override
+  Future<SequenceVerifyResult> captureLivenessSession({
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) async {
+    final args = _optionalRefConfig(
+      referenceEmbedding: referenceEmbedding,
+      config: config,
+    );
+
+    final result = await methodChannel.invokeMapMethod<String, dynamic>(
+      'captureLivenessSession',
+      args,
+    );
+
+    if (result == null) {
+      throw PlatformException(
+        code: 'EMPTY_CAPTURE_RESULT',
+        message: 'Native platform returned null for captureLivenessSession.',
+      );
+    }
+
+    return SequenceVerifyResult.fromMap(result);
+  }
+
+  @override
+  Future<DeviceIntegrityResult> getDeviceIntegrity() async {
+    final result = await methodChannel.invokeMapMethod<String, dynamic>(
+      'getDeviceIntegrity',
+    );
+
+    final integrity = result?['deviceIntegrity'];
+    if (integrity is! Map<Object?, Object?>) {
+      throw PlatformException(
+        code: 'EMPTY_INTEGRITY_RESULT',
+        message: 'Native platform returned no device integrity snapshot.',
+      );
+    }
+
+    return DeviceIntegrityResult.fromMap(integrity);
+  }
+
+  @override
   Future<void> dispose() async {
     await methodChannel.invokeMethod<void>('dispose');
   }
 }
-

@@ -182,33 +182,40 @@ flowchart LR
 - [x] Pipeline dasar `detectFaces`, `extractFaceFeature`, `checkLiveness` (single-model), `compareFaces`, dan `dispose`.
 
 ### Milestone 6: Pembaruan Aset Model Dual-Scale (`liveness-v3`)
-- [ ] Salin `anti_spoof_2_7.tflite` dan `anti_spoof_4_0.tflite` dari `capacitor-face-recognition` (branch `fix-bug`) ke `assets/models/`.
-- [ ] Daftarkan kedua model baru di `pubspec.yaml` (tetap pertahankan `anti_spoof.tflite` sebagai *fallback* kompatibilitas).
+- [x] Salin `anti_spoof_2_7.tflite` dan `anti_spoof_4_0.tflite` dari `capacitor-face-recognition` (branch `fix-bug`) ke `assets/models/`.
+- [x] Daftarkan kedua model baru di `pubspec.yaml` (tetap pertahankan `anti_spoof.tflite` sebagai *fallback* kompatibilitas).
 
 ### Milestone 7: Upgrade Native Android ke `liveness-v3` (`Kotlin`)
-- [ ] Porting modul murni: `YawConvention.kt`, `ChallengeTrajectory.kt`, `ScreenSuspect.kt`, `DeviceIntegrity.kt`, dan `AuditStore.kt`.
-- [ ] Upgrade [`FlutterFaceRecognitionPlugin.kt`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/android/src/main/kotlin/com/andrew/face/FlutterFaceRecognitionPlugin.kt):
+- [x] Porting modul murni: `YawConvention.kt`, `ChallengeTrajectory.kt`, `ScreenSuspect.kt`, `DeviceIntegrity.kt`, dan `AuditStore.kt`.
+- [x] Upgrade [`FlutterFaceRecognitionPlugin.kt`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/android/src/main/kotlin/com/andrew/face/FlutterFaceRecognitionPlugin.kt):
   - Muat duet interpreter `antiSpoof27Interpreter` (`2.7x`) & `antiSpoof40Interpreter` (`4.0x`).
   - Pisahkan `faceDetector` (`FAST`) dan `livenessDetector` (`ACCURATE`) + gunakan `pickLargestFace`.
   - Implementasikan `getNewBox` (*boundary-shifting crop*), ensemble softmax + `spoofVeto`, dan `runQualityGate` (dengan `.recycle()` pada bitmap kerja `varianceOfLaplacian` & `meanLuminance`).
   - Tambahkan method `verifyFace`, `createChallengeSession`, `verifyFaceSequence`, `captureLivenessSession` (beserta `LivenessCaptureActivity`), dan `getDeviceIntegrity`.
 
 ### Milestone 8: Upgrade Native iOS ke `liveness-v3` (`Swift`)
-- [ ] Porting modul pendukung: `YawConvention.swift`, `ChallengeTrajectory.swift`, `ScreenSuspect.swift`, `DeviceIntegrity.swift`, `AuditStore.swift`, dan `LivenessCaptureViewController.swift`.
-- [ ] Upgrade [`FlutterFaceRecognitionPlugin.swift`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/ios/Classes/FlutterFaceRecognitionPlugin.swift):
+- [x] Porting modul pendukung: `YawConvention.swift`, `ChallengeTrajectory.swift`, `ScreenSuspect.swift`, `DeviceIntegrity.swift`, `AuditStore.swift`, dan `LivenessCaptureViewController.swift`.
+- [x] Upgrade [`FlutterFaceRecognitionPlugin.swift`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/ios/Classes/FlutterFaceRecognitionPlugin.swift):
   - Kunci Vision ke `VNDetectFaceRectanglesRequestRevision3` dan gunakan 6-point Euclidean EAR.
   - Muat duet interpreter `antiSpoof27Interpreter` & `antiSpoof40Interpreter` + algoritma crop `getNewBox`.
   - Implementasikan `runQualityGate`, `verifyFace`, `createChallengeSession`, `verifyFaceSequence`, `captureLivenessSession`, dan `getDeviceIntegrity` (dengan `NSLock` pada `sessionAttempts` rate limiter).
 
 ### Milestone 9: Pembaruan Layer Dart API & Example App
-- [ ] Perbarui [`models.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/lib/src/models.dart) dan [`flutter_face_recognition.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/lib/flutter_face_recognition.dart):
+- [x] Perbarui [`models.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/lib/src/models.dart) dan [`flutter_face_recognition.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/lib/flutter_face_recognition.dart):
   - Tambahkan model `GateConfig`, `QualityResult`, `VerifyFaceResult`, `ChallengeSession`, `TrajectoryResult`, `SequenceVerifyResult`, dan `DeviceIntegrityResult`.
   - Perbarui `LivenessResult` agar memuat `liveScore`, `printScore`, `replayScore`, `spoofScore`, `label` (`LIVE` / `PRINT` / `REPLAY`), `quality`, dan `thresholdVersion` (`liveness-v3`).
-- [ ] Perbarui [`example/lib/main.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/example/lib/main.dart) untuk mendemonstrasikan `verifyFace`, Active Challenge (`LOOK_LEFT` / `LOOK_RIGHT`), diagnostik Quality Gate, dan rincian skor `live` vs `print` vs `replay`.
+- [x] Perbarui [`example/lib/main.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/example/lib/main.dart) untuk mendemonstrasikan `verifyFace`, Active Challenge (`LOOK_LEFT` / `LOOK_RIGHT`), diagnostik Quality Gate, dan rincian skor `live` vs `print` vs `replay`.
 
 ### Milestone 10: Pengujian & Validasi Kualitas
-- [ ] Tambahkan unit test Dart untuk model & serialisasi API `liveness-v3` di [`test/flutter_face_recognition_test.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/test/flutter_face_recognition_test.dart).
-- [ ] Jalankan `flutter analyze` dan `flutter test` hingga bersih 0 isu.
+- [x] Tambahkan unit test Dart untuk model & serialisasi API `liveness-v3` di [`test/flutter_face_recognition_test.dart`](file:///Users/andrewhardianto/Documents/andrewzone/Project/plugin/flutter_face_recognition/test/flutter_face_recognition_test.dart).
+- [x] Jalankan `flutter analyze` dan `flutter test` hingga bersih 0 isu.
+
+> **Status eksekusi — selesai.** Seluruh Milestone 6–10 tuntas dan tervalidasi:
+> - `flutter analyze` (plugin & example): **0 isu**; `flutter test`: **21/21 lulus**.
+> - **Android**: `flutter build apk --debug` **berhasil** (mengompilasi 7 file Kotlin plugin, termasuk `LivenessCaptureActivity` + CameraX).
+> - **iOS**: `flutter build ios --no-codesign` **berhasil** (Flutter + TensorFlowLiteSwift asli via CocoaPods).
+> - Kontrak wire tunggal dituangkan di `docs/native_contract.md` dan dipatuhi kedua platform (shape `checkLiveness`, `verifyFace`, dan `sequence` result + trajectory R1–R5 sudah diverifikasi identik Android ↔ iOS ↔ Dart).
+> - Example disimpan dalam bentuk *bare* (sesuai diagram §2 & konvensi repo). Untuk menjalankannya: `flutter create --platforms=android,ios .` di folder `example/`.
 
 ---
 

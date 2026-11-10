@@ -8,11 +8,30 @@ export 'flutter_face_recognition_platform_interface.dart';
 export 'src/models.dart';
 
 /// High-performance offline Face Recognition, Cosine Similarity matching,
-/// and Multi-Scale Passive Liveness Detection (Anti-Spoofing) using TFLite,
+/// and Enterprise Liveness Detection (`liveness-v3`) using TFLite,
 /// Google ML Kit (Android), and Apple Vision (iOS).
+///
+/// The `liveness-v3` pipeline is a 4-phase, defense-in-depth design:
+///  1. Dual-model silent-face anti-spoofing (`2.7x` + `4.0x` ensemble).
+///  2. Accurate detector + pre-liveness quality gate.
+///  3. Anti-TOCTOU [`verifyFace`] and an active temporal challenge
+///     ([`createChallengeSession`] + [`verifyFaceSequence`]).
+///  4. Anti-frame-injection native capture ([`captureLivenessSession`]),
+///     device integrity, and an encrypted audit trail.
 class FaceRecognition {
   /// Creates a [FaceRecognition] instance.
   const FaceRecognition();
+
+  /// Initializes the plugin and configures plugin-level security flags.
+  ///
+  /// Set [enableInsecureFramePath] to `true` only for legacy/debug integrations
+  /// that must call [verifyFaceSequence] with externally supplied frames. In
+  /// release builds the frame path stays disabled otherwise — prefer
+  /// [captureLivenessSession] for production.
+  Future<void> initialize({bool enableInsecureFramePath = false}) {
+    return FlutterFaceRecognitionPlatform.instance
+        .initialize(enableInsecureFramePath: enableInsecureFramePath);
+  }
 
   /// Extracts a 192-dimensional L2-normalized face embedding from an image.
   ///
@@ -31,12 +50,15 @@ class FaceRecognition {
   /// Checks whether the face in the image is a real live person or a spoof
   /// attack (printed photo, digital screen replay, or mask).
   ///
-  /// Uses Multi-Scale MiniFASNet (`1.0x` and `2.7x` crops) and compares the
-  /// averaged score against [threshold] (default `0.75`).
+  /// Uses the dual-model silent-face ensemble (`2.7x` + `4.0x` crops) with the
+  /// `argmax` + veto decision of `liveness-v3`. [threshold] maps to the liveness
+  /// `liveThreshold`; when `null` the native default (`0.80`) applies. The
+  /// returned [LivenessResult.score] is NOT comparable with pre-`liveness-v3`
+  /// SDKs.
   Future<LivenessResult> checkLiveness({
     Uint8List? bytes,
     String? base64,
-    double threshold = 0.75,
+    double? threshold,
   }) {
     return FlutterFaceRecognitionPlatform.instance.checkLiveness(
       bytes: bytes,
@@ -46,7 +68,7 @@ class FaceRecognition {
   }
 
   /// Detects all faces in the image along with bounding boxes, head rotation
-  /// Euler angles, and left/right eye open probabilities (`0.0` to `1.0`).
+  /// Euler angles (pitch / yaw / roll), and left/right eye open probabilities.
   Future<FaceDetectionResult> detectFaces({
     Uint8List? bytes,
     String? base64,
@@ -55,6 +77,83 @@ class FaceRecognition {
       bytes: bytes,
       base64: base64,
     );
+  }
+
+  /// Runs the unified, anti-TOCTOU verification on a single frame.
+  ///
+  /// Quality gate, dual-model anti-spoofing, and MobileFaceNet embedding all
+  /// execute on the same frame and bounding box. The [VerifyFaceResult.embedding]
+  /// (and optional [match] against [referenceEmbedding]) is only returned when
+  /// the quality gate passes and liveness is confirmed.
+  Future<VerifyFaceResult> verifyFace({
+    Uint8List? bytes,
+    String? base64,
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) {
+    return FlutterFaceRecognitionPlatform.instance.verifyFace(
+      bytes: bytes,
+      base64: base64,
+      referenceEmbedding: referenceEmbedding,
+      config: config,
+    );
+  }
+
+  /// Issues a single-use, randomized active challenge session.
+  ///
+  /// The challenge direction is chosen natively and cannot be influenced by the
+  /// caller. Display the returned [ChallengeSession.challenge] to the user, then
+  /// pass its `challengeId` to [verifyFaceSequence] or [captureLivenessSession].
+  Future<ChallengeSession> createChallengeSession() {
+    return FlutterFaceRecognitionPlatform.instance.createChallengeSession();
+  }
+
+  /// Verifies a multi-frame session against a previously issued challenge.
+  ///
+  /// [frames] are captured sequentially. The session is evaluated against the
+  /// temporal trajectory (R1–R5), a zero-tolerance spoof veto, and identity
+  /// consistency. The challenge direction is read from [challengeId]; the
+  /// session is single-use.
+  ///
+  /// The external frame path is blocked in release builds unless
+  /// [`initialize(enableInsecureFramePath: true)`] was called — use
+  /// [captureLivenessSession] for production.
+  Future<SequenceVerifyResult> verifyFaceSequence({
+    required List<Uint8List> frames,
+    required String challengeId,
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) {
+    return FlutterFaceRecognitionPlatform.instance.verifyFaceSequence(
+      frames: frames,
+      challengeId: challengeId,
+      referenceEmbedding: referenceEmbedding,
+      config: config,
+    );
+  }
+
+  /// Opens the native camera capture session and evaluates it end to end.
+  ///
+  /// Frames are captured and evaluated entirely on-device without crossing the
+  /// Dart/JS boundary, resisting frame injection. Returns a
+  /// [SequenceVerifyResult] that also carries a [DeviceIntegrityResult] and an
+  /// encrypted `auditId`.
+  Future<SequenceVerifyResult> captureLivenessSession({
+    List<double>? referenceEmbedding,
+    GateConfig? config,
+  }) {
+    return FlutterFaceRecognitionPlatform.instance.captureLivenessSession(
+      referenceEmbedding: referenceEmbedding,
+      config: config,
+    );
+  }
+
+  /// Returns client-side device risk signals (emulator, root/jailbreak,
+  /// debuggable build, and hooking frameworks).
+  ///
+  /// These are heuristic risk signals, not proof of compromise.
+  Future<DeviceIntegrityResult> getDeviceIntegrity() {
+    return FlutterFaceRecognitionPlatform.instance.getDeviceIntegrity();
   }
 
   /// Compares two face embedding vectors ([vector1] and [vector2]) in pure Dart
@@ -115,6 +214,7 @@ class FaceRecognition {
       isMatch: isMatch,
       score: cosineSimilarity,
       similarityPercentage: similarityPercentage,
+      threshold: threshold,
     );
   }
 
@@ -137,4 +237,3 @@ class FaceRecognition {
     return FlutterFaceRecognitionPlatform.instance.dispose();
   }
 }
-

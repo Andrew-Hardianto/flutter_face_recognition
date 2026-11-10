@@ -15,7 +15,7 @@ class FaceRecognitionDemoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Face Recognition Demo',
+      title: 'Flutter Face Recognition Demo (liveness-v3)',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -43,13 +43,32 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
 
   Uint8List? _currentImageBytes;
   FaceDetectionResult? _detectionResult;
-  LivenessResult? _livenessResult;
-  MatchResult? _matchResult;
+
+  // liveness-v3 state
+  VerifyFaceResult? _verifyResult;
+  SequenceVerifyResult? _sequenceResult;
+  ChallengeSession? _challengeSession;
+  DeviceIntegrityResult? _deviceIntegrity;
 
   List<double>? _enrolledEmbedding;
-  double _threshold = 0.75;
+  double _threshold = 0.80;
   bool _isProcessing = false;
   String _statusMessage = 'Siap. Silakan daftarkan wajah terlebih dahulu.';
+
+  @override
+  void initState() {
+    super.initState();
+    // In production you would NOT enable the insecure frame path; the active
+    // challenge below uses the native capture session instead. This flag is
+    // only so the demo can also exercise verifyFaceSequence with picked frames.
+    _faceRecognition.initialize(enableInsecureFramePath: true).then((_) {
+      return _faceRecognition.getDeviceIntegrity();
+    }).then((integrity) {
+      if (mounted) setState(() => _deviceIntegrity = integrity);
+    }).catchError((_) {
+      // Ignore — integrity is optional in the demo.
+    });
+  }
 
   @override
   void dispose() {
@@ -68,14 +87,11 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
       setState(() {
         _currentImageBytes = bytes;
         _detectionResult = null;
-        _livenessResult = null;
-        _matchResult = null;
+        _verifyResult = null;
       });
       return bytes;
     } catch (e) {
-      setState(() {
-        _statusMessage = 'Gagal mengambil gambar: $e';
-      });
+      setState(() => _statusMessage = 'Gagal mengambil gambar: $e');
       return null;
     }
   }
@@ -94,18 +110,12 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
 
     try {
       final detection = await _faceRecognition.detectFaces(bytes: bytes);
-      if (detection.count == 0) {
+      if (detection.count != 1) {
         setState(() {
           _detectionResult = detection;
-          _statusMessage = 'Tidak ada wajah yang terdeteksi pada foto.';
-        });
-        return;
-      }
-      if (detection.count > 1) {
-        setState(() {
-          _detectionResult = detection;
-          _statusMessage =
-              'Terdeteksi ${detection.count} wajah. Gunakan foto dengan 1 wajah saja.';
+          _statusMessage = detection.count == 0
+              ? 'Tidak ada wajah yang terdeteksi pada foto.'
+              : 'Terdeteksi ${detection.count} wajah. Gunakan foto dengan 1 wajah saja.';
         });
         return;
       }
@@ -124,59 +134,87 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
     }
   }
 
-  Future<void> _handleVerifyWithLiveness() async {
+  /// Anti-TOCTOU: quality gate + liveness + embedding on ONE frame & bbox.
+  Future<void> _handleVerifyFace() async {
     final bytes = _currentImageBytes;
     if (bytes == null) {
       setState(() => _statusMessage = 'Pilih atau ambil foto terlebih dahulu.');
       return;
     }
-    if (_enrolledEmbedding == null) {
-      setState(() {
-        _statusMessage =
-            'Belum ada wajah terdaftar. Lakukan Enrollment terlebih dahulu.';
-      });
-      return;
-    }
 
     setState(() {
       _isProcessing = true;
-      _statusMessage = 'Memeriksa Multi-Scale Passive Liveness (1.0x & 2.7x)...';
+      _statusMessage = 'Menjalankan verifyFace (Quality Gate + Dual Anti-Spoof)...';
     });
 
     try {
-      final detection = await _faceRecognition.detectFaces(bytes: bytes);
-      final liveness = await _faceRecognition.checkLiveness(
+      final verify = await _faceRecognition.verifyFace(
         bytes: bytes,
-        threshold: _threshold,
+        referenceEmbedding: _enrolledEmbedding,
+        config: GateConfig(liveThreshold: _threshold),
       );
 
-      if (!liveness.isLive) {
-        setState(() {
-          _detectionResult = detection;
-          _livenessResult = liveness;
-          _matchResult = null;
-          _statusMessage =
-              'SPOOF TERDETEKSI! Skor Liveness: ${(liveness.score * 100).toStringAsFixed(1)}% '
-              '(${liveness.confidence.label})';
-        });
-        return;
+      String msg;
+      if (!verify.quality.passed) {
+        msg = 'QUALITY GATE GAGAL: ${verify.quality.reason}';
+      } else if (!verify.isLive) {
+        final lv = verify.liveness;
+        msg = 'SPOOF TERDETEKSI (label: ${lv?.label.value}).\n'
+            'live=${_pct(lv?.liveScore)} print=${_pct(lv?.printScore)} '
+            'replay=${_pct(lv?.replayScore)} spoof=${_pct(lv?.spoofScore)}';
+      } else if (verify.match != null) {
+        msg = verify.match!.isMatch
+            ? 'VERIFIKASI BERHASIL (match). '
+                'Cosine: ${verify.match!.similarityPercentage.toStringAsFixed(1)}%'
+            : 'WAJAH TIDAK COCOK. '
+                'Cosine: ${verify.match!.similarityPercentage.toStringAsFixed(1)}%';
+      } else {
+        msg = 'LIVE terkonfirmasi & embedding diekstrak (tanpa referensi).';
       }
 
-      final candidateEmbedding =
-          await _faceRecognition.extractFaceFeature(bytes: bytes);
-      final match = _faceRecognition.compareFaces(
-        _enrolledEmbedding!,
-        candidateEmbedding,
-        threshold: _threshold,
+      setState(() {
+        _verifyResult = verify;
+        _statusMessage = msg;
+      });
+    } on PlatformException catch (e) {
+      setState(() => _statusMessage = 'Error [${e.code}]: ${e.message}');
+    } finally {
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  /// Active challenge: native capture session (anti frame-injection).
+  Future<void> _handleActiveChallenge() async {
+    setState(() {
+      _isProcessing = true;
+      _statusMessage = 'Membuka sesi capture native...';
+    });
+
+    try {
+      // 1. Issue a single-use, randomized challenge (LOOK_LEFT / LOOK_RIGHT).
+      final session = await _faceRecognition.createChallengeSession();
+      setState(() {
+        _challengeSession = session;
+        _statusMessage =
+            'Challenge: ${session.challenge.value}. Ikuti instruksi di kamera.';
+      });
+
+      // 2. Run the native capture session end to end.
+      final result = await _faceRecognition.captureLivenessSession(
+        referenceEmbedding: _enrolledEmbedding,
+        config: GateConfig(liveThreshold: _threshold),
       );
 
       setState(() {
-        _detectionResult = detection;
-        _livenessResult = liveness;
-        _matchResult = match;
-        _statusMessage = match.isMatch
-            ? 'VERIFIKASI BERHASIL! Kemiripan: ${match.similarityPercentage.toStringAsFixed(1)}%'
-            : 'WAJAH TIDAK COCOK! Kemiripan: ${match.similarityPercentage.toStringAsFixed(1)}%';
+        _sequenceResult = result;
+        _deviceIntegrity = result.deviceIntegrity ?? _deviceIntegrity;
+        _statusMessage = result.passed
+            ? 'CHALLENGE LOLOS (native=${result.native}). '
+                'medianLive=${_pct(result.medianLiveScore)} '
+                'votes=${result.liveVotes}/${result.frameCount} '
+                'audit=${result.auditId ?? "-"}'
+            : 'CHALLENGE GAGAL: ${result.reason} '
+                '(trajectory R1-R5: ${result.trajectory.rules})';
       });
     } on PlatformException catch (e) {
       setState(() => _statusMessage = 'Error [${e.code}]: ${e.message}');
@@ -219,20 +257,25 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
     }
   }
 
+  String _pct(double? v) =>
+      v == null ? '-' : '${(v * 100).toStringAsFixed(1)}%';
+
   @override
   Widget build(BuildContext context) {
     final face = _detectionResult?.firstFace;
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Flutter Face Recognition'),
+          title: const Text('Flutter Face Recognition • liveness-v3'),
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.person_add_alt_1), text: '1. Enroll'),
-              Tab(icon: Icon(Icons.verified_user), text: '2. Verify & Live'),
-              Tab(icon: Icon(Icons.remove_red_eye), text: '3. Blink Check'),
+              Tab(icon: Icon(Icons.verified_user), text: '2. verifyFace'),
+              Tab(icon: Icon(Icons.sensors), text: '3. Challenge'),
+              Tab(icon: Icon(Icons.remove_red_eye), text: '4. Blink'),
             ],
           ),
         ),
@@ -276,11 +319,12 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
-                  height: 310,
+                  height: 360,
                   child: TabBarView(
                     children: [
                       _buildEnrollTab(),
                       _buildVerifyTab(),
+                      _buildChallengeTab(),
                       _buildBlinkTab(face),
                     ],
                   ),
@@ -325,6 +369,10 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
   }
 
   Widget _buildVerifyTab() {
+    final verify = _verifyResult;
+    final quality = verify?.quality;
+    final liveness = verify?.liveness;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -334,10 +382,8 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Threshold Verifikasi & Liveness',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+                const Text('Live Threshold',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(
                   _threshold.toStringAsFixed(2),
                   style: const TextStyle(
@@ -350,29 +396,44 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
             Slider(
               value: _threshold,
               min: 0.60,
-              max: 0.90,
-              divisions: 30,
+              max: 0.95,
+              divisions: 35,
               label: _threshold.toStringAsFixed(2),
               onChanged: (val) => setState(() => _threshold = val),
             ),
-            if (_livenessResult != null)
+            if (quality != null)
               Text(
-                'Liveness: ${_livenessResult!.isLive ? "LIVE" : "SPOOF"} '
-                '(${(_livenessResult!.score * 100).toStringAsFixed(1)}% - ${_livenessResult!.confidence.label})',
+                'Quality Gate: ${quality.passed ? "PASS" : "FAIL (${quality.reason})"} '
+                '| faceRatio=${quality.faceRatio.toStringAsFixed(2)} '
+                '| blur=${quality.blur.toStringAsFixed(0)}',
                 style: TextStyle(
-                  color: _livenessResult!.isLive
-                      ? Colors.greenAccent
-                      : Colors.redAccent,
+                  color: quality.passed ? Colors.greenAccent : Colors.redAccent,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            if (liveness != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Label: ${liveness.label.value}  (${liveness.isLive ? "LIVE" : "SPOOF"})',
+                style: TextStyle(
+                  color: liveness.isLive ? Colors.greenAccent : Colors.redAccent,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-            if (_matchResult != null) ...[
+              Text(
+                'live=${_pct(liveness.liveScore)}  print=${_pct(liveness.printScore)}  '
+                'replay=${_pct(liveness.replayScore)}  spoof=${_pct(liveness.spoofScore)}',
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              ),
+            ],
+            if (verify?.match != null) ...[
               const SizedBox(height: 6),
               Text(
-                'Cosine Similarity: ${_matchResult!.similarityPercentage.toStringAsFixed(2)}% '
-                '(${_matchResult!.isMatch ? "MATCH" : "NO MATCH"})',
+                'Cosine Match: ${verify!.match!.similarityPercentage.toStringAsFixed(2)}% '
+                '(${verify.match!.isMatch ? "MATCH" : "NO MATCH"})',
                 style: TextStyle(
-                  color: _matchResult!.isMatch
+                  color: verify.match!.isMatch
                       ? Colors.greenAccent
                       : Colors.orangeAccent,
                   fontWeight: FontWeight.w600,
@@ -381,9 +442,76 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
             ],
             const Spacer(),
             FilledButton.icon(
-              onPressed: _isProcessing ? null : _handleVerifyWithLiveness,
+              onPressed: _isProcessing ? null : _handleVerifyFace,
               icon: const Icon(Icons.shield_outlined),
-              label: const Text('Cek Liveness & Verifikasi Wajah'),
+              label: const Text('verifyFace (Anti-TOCTOU)'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChallengeTab() {
+    final seq = _sequenceResult;
+    final session = _challengeSession;
+    final traj = seq?.trajectory;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Active Challenge (Native Capture)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              session == null
+                  ? 'Belum ada challenge. Tekan tombol untuk memulai sesi native.'
+                  : 'Challenge: ${session.challenge.value} '
+                      '(berlaku single-use, TTL 60s)',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            if (seq != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${seq.passed ? "LOLOS" : "GAGAL (${seq.reason})"} '
+                '| medianLive=${_pct(seq.medianLiveScore)} '
+                '| votes=${seq.liveVotes}/${seq.frameCount} '
+                '| native=${seq.native}',
+                style: TextStyle(
+                  color: seq.passed ? Colors.greenAccent : Colors.redAccent,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+              if (traj != null)
+                Text(
+                  'Trajectory R1-R5: ${traj.rules.toMap().entries.map((e) => "${e.key}=${e.value ? "✓" : "✗"}").join(" ")}',
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                ),
+              if (seq.auditId != null)
+                Text('Audit ID: ${seq.auditId}',
+                    style: const TextStyle(fontSize: 11)),
+            ],
+            if (_deviceIntegrity != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Device Integrity: emulator=${_deviceIntegrity!.isEmulator} '
+                'rooted=${_deviceIntegrity!.isRooted} '
+                'debuggable=${_deviceIntegrity!.isDebuggable} '
+                'hooks=${_deviceIntegrity!.hooksDetected}',
+                style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              ),
+            ],
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: _isProcessing ? null : _handleActiveChallenge,
+              icon: const Icon(Icons.sensors),
+              label: const Text('Mulai Sesi Liveness Native'),
             ),
           ],
         ),
@@ -406,6 +534,13 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
+            if (face != null)
+              Text(
+                'Pitch=${face.headEulerAngleX.toStringAsFixed(1)}° '
+                'Yaw=${face.headEulerAngleY.toStringAsFixed(1)}° '
+                'Roll=${face.headEulerAngleZ.toStringAsFixed(1)}°',
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              ),
             Text('Mata Kiri Terbuka: ${(leftProb * 100).toStringAsFixed(0)}%'),
             const SizedBox(height: 4),
             LinearProgressIndicator(value: leftProb.clamp(0.0, 1.0)),
@@ -425,4 +560,3 @@ class _FaceRecognitionHomePageState extends State<FaceRecognitionHomePage> {
     );
   }
 }
-

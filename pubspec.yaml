@@ -1,5 +1,5 @@
 name: flutter_face_recognition
-description: "High-performance offline Face Recognition, Cosine Similarity matching, and Multi-Scale Passive Liveness Detection (Anti-Spoofing) for Flutter using TFLite, ML Kit & Apple Vision."
+description: "High-performance offline Face Recognition, Cosine Similarity matching, and Enterprise Liveness Detection (liveness-v3) for Flutter using TFLite, ML Kit & Apple Vision."
 version: 1.0.0
 homepage: https://github.com/Andrew-Hardianto/flutter_face_recognition
 repository: https://github.com/Andrew-Hardianto/flutter_face_recognition
@@ -36,5 +36,7 @@ flutter:
 
   assets:
     - assets/models/mobile_face_net.tflite
+    - assets/models/anti_spoof_2_7.tflite
+    - assets/models/anti_spoof_4_0.tflite
     - assets/models/anti_spoof.tflite
 
